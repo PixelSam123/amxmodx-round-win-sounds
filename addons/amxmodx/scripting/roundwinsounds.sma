@@ -10,7 +10,7 @@
 #define SOUND_DIR "customroundwin"
 #define MAX_SOUND_PATH 64
 #define MAX_MENU_ITEM 64
-#define PLAY_DELAY 0.08
+#define PLAY_DELAY 0.1
 
 // Index 0 = None (plays nothing). 1..N = real sounds.
 new const g_SoundFiles[][] =
