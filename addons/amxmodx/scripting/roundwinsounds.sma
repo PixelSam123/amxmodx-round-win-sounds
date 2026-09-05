@@ -125,7 +125,7 @@ ShowMenu(id)
     {
         if (g_PlayerChoice[id] == i)
         {
-            formatex(itemText, charsmax(itemText), "%s [Selected]", g_SoundDisplayNames[i]);
+            formatex(itemText, charsmax(itemText), "%s \r[Selected]", g_SoundDisplayNames[i]);
         }
         else
         {
