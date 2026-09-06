@@ -10,18 +10,19 @@
 #define SOUND_DIR "customroundwin"
 #define MAX_SOUND_PATH 64
 #define MAX_MENU_ITEM 64
+
 #define PLAY_DELAY 0.1
+#define NUM_VARIATIONS 4
 
 // Index 0 = None (plays nothing). 1..N = real sounds.
-new const g_SoundFiles[][] =
+new const g_SoundFiles[NUM_VARIATIONS][] =
 {
     "",
     "candyland.wav",
     "sorry.wav",
     "whoisdonk.wav"
 };
-
-new const g_SoundDisplayNames[][] =
+new const g_SoundDisplayNames[NUM_VARIATIONS][] =
 {
     "None",
     "Candyland",
@@ -29,21 +30,10 @@ new const g_SoundDisplayNames[][] =
     "Who is Donk?"
 };
 
-new g_PlayerChoice[33];
+new g_PlayerChoice[MAX_PLAYERS + 1];
 new g_LastKillerT;
 new g_LastKillerCT;
 new g_MaxPlayers;
-
-public plugin_precache()
-{
-    new path[MAX_SOUND_PATH];
-
-    for (new i = 1; i < sizeof(g_SoundFiles); i++)
-    {
-        formatex(path, charsmax(path), "%s/%s", SOUND_DIR, g_SoundFiles[i]);
-        precache_sound(path);
-    }
-}
 
 public plugin_init()
 {
@@ -62,6 +52,18 @@ public plugin_init()
     register_clcmd("say .ws", "Cmd_ShowMenu");
     register_clcmd("say_team .winsound", "Cmd_ShowMenu");
     register_clcmd("say_team .ws", "Cmd_ShowMenu");
+}
+
+public plugin_precache()
+{
+    new path[MAX_SOUND_PATH];
+
+    // start from 1 because 0th sound is for None
+    for (new i = 1; i < sizeof(g_SoundFiles); i++)
+    {
+        formatex(path, charsmax(path), "%s/%s", SOUND_DIR, g_SoundFiles[i]);
+        precache_sound(path);
+    }
 }
 
 public client_putinserver(id)
@@ -85,16 +87,10 @@ public OnDeath()
     new killer = read_data(1);
     new victim = read_data(2);
 
-    if (killer < 1 || killer > g_MaxPlayers || !is_user_connected(killer))
-    {
-        return;
-    }
+    if (killer < 1 || killer > g_MaxPlayers || !is_user_connected(killer)) return;
 
-    // Skip suicides (includes kill console command).
-    if (killer == victim)
-    {
-        return;
-    }
+    // Ignore self-kill
+    if (killer == victim) return;
 
     new CsTeams:team = cs_get_user_team(killer);
 
@@ -116,12 +112,11 @@ public Cmd_ShowMenu(id)
 
 ShowMenu(id)
 {
-    new menu = menu_create("Select Round Win Sound:", "MenuHandler");
+    new menu = menu_create("\ySelect Round Win Sound:", "MenuHandler");
+
     new itemText[MAX_MENU_ITEM];
     new numStr[4];
-    new count = sizeof(g_SoundFiles);
-
-    for (new i = 0; i < count; i++)
+    for (new i = 0; i < sizeof(g_SoundFiles); i++)
     {
         if (g_PlayerChoice[id] == i)
         {
@@ -131,35 +126,32 @@ ShowMenu(id)
         {
             formatex(itemText, charsmax(itemText), "%s", g_SoundDisplayNames[i]);
         }
-
         num_to_str(i, numStr, charsmax(numStr));
+
         menu_additem(menu, itemText, numStr);
     }
 
     menu_setprop(menu, MPROP_EXITNAME, "Exit");
+
     menu_display(id, menu, 0);
 }
 
 public MenuHandler(id, menu, item)
 {
-    if (item < 0)
+    if (item == MENU_EXIT)
     {
         menu_destroy(menu);
         return PLUGIN_HANDLED;
     }
 
-    new cmd[4];
-    new access;
-    new callback;
-    menu_item_getinfo(menu, item, access, cmd, charsmax(cmd), _, _, callback);
-
-    new choice = str_to_num(cmd);
-
-    if (choice >= 0 && choice < sizeof(g_SoundFiles))
+    if (item < 0 || item >= sizeof(g_SoundFiles))
     {
-        g_PlayerChoice[id] = choice;
-        client_print(id, print_chat, "[Round Win Sounds] Selected: %s", g_SoundDisplayNames[choice]);
+        menu_destroy(menu);
+        return PLUGIN_HANDLED;
     }
+
+    g_PlayerChoice[id] = item;
+    client_print(id, print_chat, "[Round Win Sounds] Selected: %s", g_SoundDisplayNames[item]);
 
     menu_destroy(menu);
     return PLUGIN_HANDLED;
@@ -179,10 +171,7 @@ public Task_PlayWinSound(CsTeams:team)
 {
     new id = ResolveWinSoundPlayer(team);
 
-    if (id == 0)
-    {
-        return;
-    }
+    if (id == 0) return;
 
     new path[MAX_SOUND_PATH];
     formatex(path, charsmax(path), "%s/%s", SOUND_DIR, g_SoundFiles[g_PlayerChoice[id]]);
@@ -202,6 +191,7 @@ ResolveWinSoundPlayer(CsTeams:team)
     return FindFallback(team);
 }
 
+// Validation
 bool:IsEligible(id, CsTeams:team)
 {
     if (id < 1 || id > g_MaxPlayers || !is_user_connected(id))
@@ -225,8 +215,8 @@ bool:IsEligible(id, CsTeams:team)
 // First connected player on the winning team with a non-None choice, else 0.
 FindFallback(CsTeams:team)
 {
-    new players[32];
-    new num;
+    new players[MAX_PLAYERS];
+    new numPlayersOnTeam;
     new teamName[10];
 
     if (team == CS_TEAM_T)
@@ -238,9 +228,9 @@ FindFallback(CsTeams:team)
         copy(teamName, charsmax(teamName), "CT");
     }
 
-    get_players(players, num, "e", teamName);
+    get_players(players, numPlayersOnTeam, "e", teamName);
 
-    for (new i = 0; i < num; i++)
+    for (new i = 0; i < numPlayersOnTeam; i++)
     {
         if (g_PlayerChoice[players[i]] > 0 && g_PlayerChoice[players[i]] < sizeof(g_SoundFiles))
         {
