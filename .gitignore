@@ -1,0 +1,18 @@
+# AMXX build artifacts
+*.amxx
+addons/amxmodx/scripting/compiled/
+
+# Locally downloaded AMXX compiler archives
+amxmodx_linux/
+amxmodx_win/
+amxmodx.tar.gz
+amxmodx.zip
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
