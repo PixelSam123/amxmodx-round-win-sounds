@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 PixelSam123
+//
+// Round Win Sounds - AMX Mod X plugin for Counter-Strike 1.6
+
 #pragma semicolon 1
 
 #include <amxmodx>
@@ -18,9 +23,9 @@
 new const g_SoundFiles[NUM_VARIATIONS][] =
 {
     "",
-    "candyland.wav",
-    "sorry.wav",
-    "whoisdonk.wav"
+    "sound1.wav",
+    "sound2.wav",
+    "sound3.wav"
 };
 new const g_SoundDisplayNames[NUM_VARIATIONS][] =
 {
@@ -37,7 +42,7 @@ new g_MaxPlayers;
 
 public plugin_init()
 {
-    register_plugin(PLUGIN, VERSION, AUTHOR);
+    register_plugin(PLUGIN, VERSION, AUTHOR, "https://github.com/PixelSam123/amxmodx-round-win-sounds", "Play a player-selected sound after a round win");
 
     g_MaxPlayers = get_maxplayers();
     g_LastKillerT = 0;
@@ -159,11 +164,15 @@ public MenuHandler(id, menu, item)
 
 public OnTerWin()
 {
+    // set_task passes the task id to the callback as its first argument, so
+    // using the team as the task id also supplies Task_PlayWinSound's team.
+    remove_task(_:CS_TEAM_T);
     set_task(PLAY_DELAY, "Task_PlayWinSound", _:CS_TEAM_T);
 }
 
 public OnCtWin()
 {
+    remove_task(_:CS_TEAM_CT);
     set_task(PLAY_DELAY, "Task_PlayWinSound", _:CS_TEAM_CT);
 }
 
