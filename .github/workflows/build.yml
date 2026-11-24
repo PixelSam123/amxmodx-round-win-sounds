@@ -2,46 +2,58 @@ name: Build AMXX Plugin
 
 env:
   PLUGIN_NAME: roundwinsounds
+  AMXX_RELEASE_TAG: 1.10.0.5481       # GitHub release tag
+  AMXX_ASSET_VERSION: 1.10.0-git5481  # version used in asset filenames
+  AMXX_LINUX_SHA256: ee33b31ae92afd94802c43eae14ecdfa1ffa2ba0b11658e8bec98f48a5881272
+  AMXX_WINDOWS_SHA256: 5ece16f1c0060de0591cdc7ea3643c71598b3754938c7d39e3b7923dafbc57af
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   build_linux:
     name: Build (Linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Install AMX Mod X compiler 1.10 (Linux)
         run: |
-          wget -q https://github.com/alliedmodders/amxmodx/releases/download/1.10.0.5481/amxmodx-1.10.0-git5481-base-linux.tar.gz -O amxmodx.tar.gz
+          wget -q "https://github.com/alliedmodders/amxmodx/releases/download/${AMXX_RELEASE_TAG}/amxmodx-${AMXX_ASSET_VERSION}-base-linux.tar.gz" -O amxmodx.tar.gz
+          echo "${AMXX_LINUX_SHA256}  amxmodx.tar.gz" | sha256sum -c -
           mkdir -p amxmodx_linux
           tar -xzf amxmodx.tar.gz -C amxmodx_linux
-          ls -lh amxmodx_linux/addons/amxmodx/scripting/amxxpc*
           AMXXPC=$(find amxmodx_linux -name "amxxpc" -type f | head -n1)
           AMXXPC_DIR=$(dirname "$AMXXPC")
-          echo "AMXXPC=$AMXXPC" >> $GITHUB_ENV
-          echo "AMXXPC_DIR=$AMXXPC_DIR" >> $GITHUB_ENV
-          echo "LD_LIBRARY_PATH=$AMXXPC_DIR:$LD_LIBRARY_PATH" >> $GITHUB_ENV
-          ls -la "$AMXXPC" "$AMXXPC_DIR/amxxpc32.so"
+          echo "AMXXPC=$AMXXPC" >> "$GITHUB_ENV"
+          echo "AMXXPC_DIR=$AMXXPC_DIR" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$AMXXPC_DIR:${LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
           chmod +x "$AMXXPC"
 
       - name: Compile ${{ env.PLUGIN_NAME }}.sma
         run: |
           mkdir -p addons/amxmodx/scripting/compiled
-          echo "Using compiler: $AMXXPC (dir $AMXXPC_DIR)"
-          ls -la "$AMXXPC_DIR/amxxpc"*
-          ls -la addons/amxmodx/scripting/
-          LD_LIBRARY_PATH="$AMXXPC_DIR:$LD_LIBRARY_PATH" "$AMXXPC" addons/amxmodx/scripting/${{ env.PLUGIN_NAME }}.sma -oaddons/amxmodx/scripting/compiled/${{ env.PLUGIN_NAME }}.amxx -iaddons/amxmodx/scripting/include -iamxmodx_linux/addons/amxmodx/scripting/include
-          ls -lh addons/amxmodx/scripting/compiled/
-          test -f addons/amxmodx/scripting/compiled/${{ env.PLUGIN_NAME }}.amxx || { echo "Compile failed - artifact missing" >&2; exit 1; }
+          LD_LIBRARY_PATH="$AMXXPC_DIR:${LD_LIBRARY_PATH}" \
+            "$AMXXPC" "addons/amxmodx/scripting/${PLUGIN_NAME}.sma" \
+            "-oaddons/amxmodx/scripting/compiled/${PLUGIN_NAME}.amxx" \
+            "-iamxmodx_linux/addons/amxmodx/scripting/include"
+          test -f "addons/amxmodx/scripting/compiled/${PLUGIN_NAME}.amxx" || { echo "Compile failed - artifact missing" >&2; exit 1; }
 
-      - name: Upload artifact (Linux)
-        uses: actions/upload-artifact@v4
+      - name: Upload plugin artifact (Linux)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ env.PLUGIN_NAME }}-linux.amxx
           path: addons/amxmodx/scripting/compiled/${{ env.PLUGIN_NAME }}.amxx
@@ -51,34 +63,97 @@ jobs:
     name: Build (Windows)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Install AMX Mod X compiler 1.10 (Windows)
         shell: pwsh
         run: |
-          Invoke-WebRequest -Uri https://github.com/alliedmodders/amxmodx/releases/download/1.10.0.5481/amxmodx-1.10.0-git5481-base-windows.zip -OutFile amxmodx.zip
+          Invoke-WebRequest -Uri "https://github.com/alliedmodders/amxmodx/releases/download/${env:AMXX_RELEASE_TAG}/amxmodx-${env:AMXX_ASSET_VERSION}-base-windows.zip" -OutFile amxmodx.zip
+          $hash = (Get-FileHash amxmodx.zip -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne $env:AMXX_WINDOWS_SHA256) { throw "AMX Mod X archive checksum mismatch: $hash" }
           Expand-Archive amxmodx.zip -DestinationPath amxmodx_win -Force
-          Get-ChildItem -Recurse -Filter "amxxpc*" -Path amxmodx_win | Format-Table FullName,Length
           $AMXXPC = Get-ChildItem -Recurse -Filter "amxxpc.exe" -Path amxmodx_win | Select-Object -First 1 -ExpandProperty FullName
-          $AMXXPC_DIR = Split-Path $AMXXPC
+          if (-not $AMXXPC) { throw "amxxpc.exe not found in the AMX Mod X archive" }
           "AMXXPC=$AMXXPC" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "AMXXPC_DIR=$AMXXPC_DIR" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          Get-ChildItem $AMXXPC_DIR/amxxpc* | Format-List Name,Length,FullName
+          "AMXXPC_DIR=$(Split-Path $AMXXPC)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Compile ${{ env.PLUGIN_NAME }}.sma
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path addons/amxmodx/scripting/compiled -Force | Out-Null
-          Write-Host "Using compiler: $env:AMXXPC (dir $env:AMXXPC_DIR)"
-          Get-ChildItem "$env:AMXXPC_DIR/amxxpc*" | Format-Table Name,Length
-          Get-ChildItem addons/amxmodx/scripting/ | Format-Table Name,Length
-          & $env:AMXXPC "addons\amxmodx\scripting\${{ env.PLUGIN_NAME }}.sma" "-oaddons\amxmodx\scripting\compiled\${{ env.PLUGIN_NAME }}.amxx" "-iaddons\amxmodx\scripting\include" "-iamxmodx_win\addons\amxmodx\scripting\include"
-          Get-ChildItem addons/amxmodx/scripting/compiled/ | Format-Table Name,Length
-          if (-not (Test-Path addons/amxmodx/scripting/compiled/${{ env.PLUGIN_NAME }}.amxx)) { throw "Compile failed - artifact missing" }
+          & $env:AMXXPC "addons\amxmodx\scripting\${env:PLUGIN_NAME}.sma" "-oaddons\amxmodx\scripting\compiled\${env:PLUGIN_NAME}.amxx" "-iamxmodx_win\addons\amxmodx\scripting\include"
+          if (-not (Test-Path "addons/amxmodx/scripting/compiled/${env:PLUGIN_NAME}.amxx")) { throw "Compile failed - artifact missing" }
 
-      - name: Upload artifact (Windows)
-        uses: actions/upload-artifact@v4
+      - name: Upload plugin artifact (Windows)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ env.PLUGIN_NAME }}-windows.amxx
           path: addons/amxmodx/scripting/compiled/${{ env.PLUGIN_NAME }}.amxx
           if-no-files-found: error
+
+  release:
+    name: Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs: [build_linux, build_windows]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Verify tag matches plugin version
+        run: |
+          SOURCE_VERSION=$(sed -n 's/^#define VERSION "\([^"]*\)".*/\1/p' "addons/amxmodx/scripting/${PLUGIN_NAME}.sma")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ -z "$SOURCE_VERSION" ]; then
+            echo "Could not read VERSION from addons/amxmodx/scripting/${PLUGIN_NAME}.sma" >&2
+            exit 1
+          fi
+          if [ "$SOURCE_VERSION" != "$TAG_VERSION" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match plugin VERSION '${SOURCE_VERSION}'" >&2
+            exit 1
+          fi
+
+      - name: Download compiled plugin
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: ${{ env.PLUGIN_NAME }}-linux.amxx
+          path: dist
+
+      - name: Prepare release files
+        run: |
+          PLUGIN_FILE=$(find dist -name "${PLUGIN_NAME}.amxx" -print -quit)
+          test -n "$PLUGIN_FILE" || { echo "compiled plugin not found" >&2; exit 1; }
+          cp "$PLUGIN_FILE" "${PLUGIN_NAME}.amxx"
+          sha256sum "${PLUGIN_NAME}.amxx" > SHA256SUMS
+          git archive --format=zip --prefix="${PLUGIN_NAME}-${GITHUB_REF_NAME}/" -o "${PLUGIN_NAME}-${GITHUB_REF_NAME}-source.zip" HEAD
+          sha256sum "${PLUGIN_NAME}-${GITHUB_REF_NAME}-source.zip" >> SHA256SUMS
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ASSETS=(
+            "${PLUGIN_NAME}.amxx"
+            "SHA256SUMS"
+            "${PLUGIN_NAME}-${GITHUB_REF_NAME}-source.zip"
+          )
+          RELEASE_FLAGS=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            RELEASE_FLAGS+=(--prerelease)
+          fi
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "${ASSETS[@]}" --clobber
+            if [ ${#RELEASE_FLAGS[@]} -gt 0 ]; then
+              gh release edit "$GITHUB_REF_NAME" "${RELEASE_FLAGS[@]}"
+            fi
+          else
+            gh release create "$GITHUB_REF_NAME" "${ASSETS[@]}" \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes \
+              "${RELEASE_FLAGS[@]}"
+          fi
