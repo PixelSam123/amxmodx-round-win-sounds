@@ -24,7 +24,8 @@ Do these once, before the first public release.
    git ls-files "sound/customroundwin"
    ```
 
-   Only the three silent placeholder WAVs should be listed.
+   Only the three silent placeholder WAVs and this directory's README should
+   be listed.
 
 3. Make the repository public: **Settings -> General -> Danger Zone ->
    Change repository visibility**.
